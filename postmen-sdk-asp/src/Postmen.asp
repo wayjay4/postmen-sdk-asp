@@ -1,4 +1,5 @@
 <!--#include file="PostmenException.asp"-->
+<!--#include file="../../../../../resources/inc/make_json.asp"-->
 
 <%
 ' local vars
@@ -68,9 +69,45 @@ Class Postmen
     cv_calls_left = null
   End Function
 
-  Public Function buildCurlParams(method, path, config)
+  Public Function buildXmlHttpParams(method, path, config)
     isContructed()
-    'body
+    ' local vars
+    dim parameters, url, query, xmlhttp_params, headers
+
+    set parameters = MergeDicts(config)
+
+    if isNull(parameters("body")) then
+      parameters("body") = ""
+    elseif not TypeName(parameters("body")) = "String" then
+      if (parameters("body").Count - 1) = 0 then
+        parameters("body") = ""
+      else
+        parameters("body") = (new JSON)(empty, parameters("body"), true)
+      end if
+    end if
+
+    set headers = server.createobject("scripting.dictionary")
+    headers.add "Content-Type", "application/json"
+    headers.add "postmen-api-key", cv_api_key
+    headers.add "x-postmen-agent", "php-sdk-"&ScriptEngineMinorVersion
+
+    query = null
+    if not isNull(parameters("query")) then
+      query = parameters("query")
+    end if
+
+    url = generateURL(parameters("endpoint"), path, method, query)
+
+    set xmlhttp_params = server.createobject("scripting.dictionary")
+    xmlhttp_params.add "url", url
+    xmlhttp_params.add "customrequest", method
+    xmlhttp_params.add "httpheaders", headers
+
+    if not method = "GET" then
+      xmlhttp_params.add "postfields" = parameters("body")
+    end if
+
+    set buildXmlHttpParams = xmlhttp_params
   End Function
 
   Public Function myCall(method, path, config)
@@ -185,8 +222,15 @@ Class Postmen
     isContructed()
 
     if not TypeName(payload) = "String" then
-      set payload = Server.CreateObject("Scripting.Dictionary")
-      payload.add "async", false
+      'set payload = Server.CreateObject("Scripting.Dictionary")
+      'payload.add "async", false
+
+      myKey = "async"
+      if payload.Exists(myKey) then
+        payload.item(myKey) = false
+      else
+        payload.add myKey, false
+      end if
     end if
 
     create = callPOST("/v3/"&resource, payload, config)
@@ -208,7 +252,7 @@ Class Postmen
     end if
   End Function
 
-  '** takes a dictonary object config as parameters
+  '** takes a dictonary object config as parameter
   '*  returns merged dictionary object
   '*  values from config are priority
   '**
