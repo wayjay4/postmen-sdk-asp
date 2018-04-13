@@ -3,14 +3,22 @@
 
 <%
 ' local vars
-Dim api_key, region, config, myPostmen
+Dim api_key, region, config, api_myPostmen, result
 
-api_key = "1234"
+api_key = "214f40cf-3c18-4191-9c22-2dd09ec8ec9a"
 region = "sandbox"
 set config = Server.CreateObject("Scripting.Dictionary")
-config.add "endpoint", "blah-blah-blah"
 
-set myPostmen = (new Postmen)(api_key, region, config)
+set api_myPostmen = (new Postmen)(api_key, region, config)
+
+resource = "labels"
+id = null
+set query = Server.CreateObject("Scripting.Dictionary")
+set config = Server.CreateObject("Scripting.Dictionary")
+result = api_myPostmen.myGet(resource, id, query, config)
+response.write "result: "&result
+
+
 
 '**
 '* Class Handler
@@ -60,7 +68,6 @@ Class Postmen
     cv_config.add "array", false
     cv_config.add "raw", false
     cv_config.add "safe", false
-    cv_config.add "proxy", Server.CreateObject("Scripting.Dictionary")
     set cv_config = MergeDicts(config)
     ' set attributes concerning rate limiting and auto-retry
     cv_delay = 1
@@ -76,7 +83,7 @@ Class Postmen
 
     set parameters = MergeDicts(config)
 
-    if isNull(parameters("body")) then
+    if isNull(parameters("body")) OR isEmpty(parameters("body")) then
       parameters("body") = ""
     elseif not TypeName(parameters("body")) = "String" then
       if (parameters("body").Count - 1) = 0 then
@@ -91,9 +98,9 @@ Class Postmen
     headers.add "postmen-api-key", cv_api_key
     headers.add "x-postmen-agent", "php-sdk-"&ScriptEngineMinorVersion
 
-    query = null
-    if not isNull(parameters("query")) then
-      query = parameters("query")
+    set query = Server.CreateObject("Scripting.Dictionary")
+    if not (parameters("query").Count - 1) = 0 then
+      set query = parameters("query")
     end if
 
     url = generateURL(parameters("endpoint"), path, method, query)
@@ -104,7 +111,9 @@ Class Postmen
     xmlhttp_params.add "httpheaders", headers
 
     if not method = "GET" then
-      xmlhttp_params.add "postfields" = parameters("body")
+      xmlhttp_params.add "postfields", parameters("body")
+    else
+      xmlhttp_params.add "postfields", null
     end if
 
     set buildXmlHttpParams = xmlhttp_params
@@ -112,12 +121,61 @@ Class Postmen
 
   Public Function myCall(method, path, config)
     isContructed()
-    'body
+    ' local vars
+    dim xmlhttp, parameters, retry, raw, safe, xmlhttp_params, strStatus, strResponse
+
+    cv_retries = cv_retries + 1
+
+    set parameters = MergeDicts(config)
+
+    if isNull(method) then
+      method = parameters("method")
+    else
+      parameters("method") = method
+    end if
+
+    if isNull(path) then
+      path = parameters("path")
+    else
+      parameters("path") = path
+    end if
+
+    retry = parameters("retry")
+    raw = parameters("raw")
+    safe = parameters("safe")
+
+    set xmlhttp_params = buildXmlHttpParams(method, path, parameters)
+
+    set xmlhttp = server.createobject("Microsoft.XMLHTTP")
+    xmlhttp.open xmlhttp_params("customrequest"), xmlhttp_params("url"), false
+
+    for each key in xmlhttp_params("httpheaders")
+      header = xmlhttp_params("httpheaders")(key)
+      'Response.Write objPayment.Name
+      xmlhttp.setRequestHeader key, header
+
+      'response.write "key: "&key&", value: "& xmlhttp_params("httpheaders")(key) &VbCrLf
+    next
+
+    if not isNull(xmlhttp_params("postfields")) then
+      xmlhttp.send xmlhttp_params("postfields")
+    else
+      xmlhttp.send
+    end if
+
+    strStatus = xmlhttp.Status
+    strResponse = xmlhttp.ResponseText
+
+    call processXmlHttpResponse(strStatus, strResponse, parameters)
+
   End Function
 
-  Public Function processCurlResponse(fv_response, parameters)
+  Public Function processXmlHttpResponse(strStatus, strResponse, parameters)
     isContructed()
-    'body
+
+    response.write strResponse
+
+    'processXmlHttpResponse = handle(null, null)
   End Function
 
   Public Function handleError(err_message, err_code, err_retryable, err_details, parameters)
@@ -180,7 +238,7 @@ Class Postmen
   Public Function callGET(path, query, config)
     isContructed()
 
-    config("query") = query
+    config.add "query", query
 
     callGET = myCall("GET", path, config)
   End Function
