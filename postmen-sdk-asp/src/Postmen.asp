@@ -82,8 +82,8 @@ Class Postmen
     cv_config.add "retry", true
     cv_config.add "rate", true
     cv_config.add "array", false
-    cv_config.add "raw", false
-    cv_config.add "safe", true
+    cv_config.add "raw", true
+    cv_config.add "safe", false
     set cv_config = MergeDicts(config)
     ' set attributes concerning rate limiting and auto-retry
     cv_delay = 1
@@ -205,7 +205,7 @@ Class Postmen
     ' parce the string object strResponse
     set parsed = json_parcer.Parse(strResponse)
 
-    if not isObject(parsed) then
+    if isObject(parsed) then
       if parameters("raw") then
         set raw_response = server.CreateObject("Scripting.Dictionary")
         raw_response.add "strResponse", strResponse
@@ -234,7 +234,7 @@ Class Postmen
     set result = CreateObject("Scripting.Dictionary")
     result.add "strResponse", null
 
-    if not parameters("safe") then
+    if parameters("safe") then
       set handleError = result
     else
       errorMessage = "error code: "&err_code&", error message: "&err_message
@@ -246,6 +246,7 @@ Class Postmen
   Public Function handle(parsed, parameters)
     isContructed()
     ' local vars
+    dim err_code, err_message, err_details, err_retryable, delay, retried
 
     if parsed.value("meta")("code") = 200 then
       ' output the json object
@@ -262,13 +263,54 @@ Class Postmen
       'response.write "labels: "& parsed.value("data")("labels") & "<br>"
       'response.write "</p>"
 
-      set result = CreateObject("Scripting.Dictionary")
-      result.add "data", parsed.value("data")
+      if parameters("array") then
+        '
+      else
+        set result = CreateObject("Scripting.Dictionary")
+        result.add "data", parsed.value("data")
+      end if
 
       set handle = result
     else
-      'NEEDS ERROR CATCHING CODE HERE
-      response.write "Postmen server side error occurred."
+      err_code = 0
+      err_message = "Postmen serve side error occurred."
+      err_details = Server.CreateObject("Scripting.Dictionary")
+      err_retryable = false
+
+      if not isNull(parsed.value("meta")("code")) AND not isEmpty(parsed.value("meta")("code")) then
+        err_code = parsed.value("meta")("code")
+      end if
+
+      if not isNull(parsed.value("meta")("message")) AND not isEmpty(parsed.value("meta")("message")) then
+        err_message = parsed.value("meta")("message")
+      end if
+
+      if not isNull(parsed.value("meta")("details")) AND not isEmpty(parsed.value("meta")("details")) then
+        err_details = parsed.value("meta")("details")
+      end if
+
+      if not isNull(parsed.value("meta")("retryable")) AND not isEmpty(parsed.value("meta")("retryable")) then
+        err_retryable = parsed.value("meta")("retryable")
+      end if
+
+      if parameters("rate") AND err_code = 429 then
+        delay = parameters("reset") - parameters("now")
+        if delay > 0 then
+          mySleep(delay)
+        end if
+        set handle = myCall(null, null, parameters)
+      end if
+
+      if parameters("rate") AND err_retryable then
+        set retried = handleRetry(parameters)
+        if retried.Exists("null") then
+          if not retried("null") then
+            set handle = retried
+          end if
+        end if
+      end if
+
+      set handle = handleError(err_message, err_code, err_retryable, err_details, parameters)
     end if
   End Function
 
@@ -301,18 +343,25 @@ Class Postmen
 
   Public Function handleRetry(parameters)
     isContructed()
+    ' local vars
+    dim result
+
+    result = Server.CreateObject("Scripting.Dictionary")
+    result.add "null", false
 
     if cv_retries < cv_max_retries then
       mySleep(cv_delay)
 
       cv_delay = cv_delay * 2
 
-      handleRetry = myCall(null, null, parameters)
+      set handleRetry = myCall(null, null, parameters)
     else
       cv_retries = 0
       cv_delay = 1
 
-      handleRetry = null
+      result("null") = true
+
+      set handleRetry = result
     end if
   End Function
 
