@@ -19,15 +19,25 @@ set config = Server.CreateObject("Scripting.Dictionary")
 set result = api_myPostmen.myGet(resource, id, query, config)
 
 
-'response.write "result: "&result("strResponse")
+if result.Exists("strResponse") then
+  response.write result("strResponse")
+elseif result.Exists("data") then
+  response.write "<p>"
+  response.write "next_token: "& result("data")("next_token") & "<br>"
+  response.write "limit: "& result("data")("limit") & "<br>"
+  response.write "created_at_min: "& result("data")("created_at_min") & "<br>"
+  response.write "created_at_max: "& result("data")("created_at_max") & "<br>"
+  'response.write "labels: "& result("data")("labels") & "<br>"
+  response.write "</p>"
+end if
 
-response.write("<p>")
-for each key in result
-  data = result(key)
 
-  response.write "key: "&key&", value: "& result(key) &VbCrLf
-next
-response.write("</p>")
+'response.write("<p>")
+'for each key in result
+  'data = result(key)
+  'response.write "key: "&key&", value: "& result(key) &VbCrLf
+'next
+'response.write("</p>")
 
 
 
@@ -219,18 +229,21 @@ Class Postmen
       ' output the json object
       'parsed.Write()
       ' output a single value from the json object
-      response.write "<p>"
-      response.write "code: "& parsed.value("meta")("code") & "<br>"
-      response.write "message: "& parsed.value("meta")("message") & "<br>"
+      'response.write "<p>"
+      'response.write "code: "& parsed.value("meta")("code") & "<br>"
+      'response.write "message: "& parsed.value("meta")("message") & "<br>"
       'response.write "details: "& parsed.value("meta")("details") & "<br>"
-      response.write "next_token: "& parsed.value("data")("next_token") & "<br>"
-      response.write "limit: "& parsed.value("data")("limit") & "<br>"
-      response.write "created_at_min: "& parsed.value("data")("created_at_min") & "<br>"
-      response.write "created_at_max: "& parsed.value("data")("created_at_max") & "<br>"
+      'response.write "next_token: "& parsed.value("data")("next_token") & "<br>"
+      'response.write "limit: "& parsed.value("data")("limit") & "<br>"
+      'response.write "created_at_min: "& parsed.value("data")("created_at_min") & "<br>"
+      'response.write "created_at_max: "& parsed.value("data")("created_at_max") & "<br>"
       'response.write "labels: "& parsed.value("data")("labels") & "<br>"
-      response.write "</p>"
+      'response.write "</p>"
 
-      set handle = parsed
+      set result = CreateObject("Scripting.Dictionary")
+      result.add "data", parsed.value("data")
+
+      set handle = result
     else
       'NEEDS ERROR CATCHING CODE HERE
       response.write "Postmen server side error occurred."
@@ -294,14 +307,14 @@ Class Postmen
 
     config("body") = body
 
-    callPOST = myCall("POST", path, config)
+    set callPOST = myCall("POST", path, config)
   End Function
 
   Public Function callPUT(path, body, config)
     isContructed()
 
     config("body") = body
-    callPUT = myCall("PUT", path, config)
+    set callPUT = myCall("PUT", path, config)
   End Function
 
   Public Function callDELETE(path, body, config)
@@ -309,7 +322,7 @@ Class Postmen
 
     config("body") = body
 
-    callDELETE = myCall("DELETE", path, config)
+    set callDELETE = myCall("DELETE", path, config)
   End Function
 
   Public Function myGet(resource, id, query, config)
@@ -337,7 +350,7 @@ Class Postmen
       end if
     end if
 
-    create = callPOST("/v3/"&resource, payload, config)
+    set create = callPOST("/v3/"&resource, payload, config)
   End Function
 
   Public Function getError()
