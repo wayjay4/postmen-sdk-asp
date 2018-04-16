@@ -1,11 +1,12 @@
 <!--#include file="PostmenException.asp"-->
 <!--#include file="../../../../../resources/inc/make_json.asp"-->
+<!--#include file="../../../../../resources/inc/parse_json.asp"-->
 
 <%
 ' local vars
-Dim api_key, region, config, api_myPostmen, result
+Dim api_key, region, config, api_myPostmen, result, key
 
-api_key = "214f40cf-3c18-4191-9c22-2dd09ec8ec9a"
+api_key = "1234"
 region = "sandbox"
 set config = Server.CreateObject("Scripting.Dictionary")
 
@@ -15,8 +16,18 @@ resource = "labels"
 id = null
 set query = Server.CreateObject("Scripting.Dictionary")
 set config = Server.CreateObject("Scripting.Dictionary")
-result = api_myPostmen.myGet(resource, id, query, config)
-response.write "result: "&result
+set result = api_myPostmen.myGet(resource, id, query, config)
+
+
+'response.write "result: "&result("strResponse")
+
+response.write("<p>")
+for each key in result
+  data = result(key)
+
+  response.write "key: "&key&", value: "& result(key) &VbCrLf
+next
+response.write("</p>")
 
 
 
@@ -166,16 +177,30 @@ Class Postmen
     strStatus = xmlhttp.Status
     strResponse = xmlhttp.ResponseText
 
-    call processXmlHttpResponse(strStatus, strResponse, parameters)
-
+    set myCall = processXmlHttpResponse(strStatus, strResponse, parameters)
   End Function
 
   Public Function processXmlHttpResponse(strStatus, strResponse, parameters)
     isContructed()
+    ' local vars
+    dim json_parcer, parsed, raw_response
 
-    response.write strResponse
+    'response.write strResponse
 
-    'processXmlHttpResponse = handle(null, null)
+    ' instantiate the class
+    set json_parcer = New JSONobject
+    ' load and parse some JSON formatted query string and set to jsonObj
+    set parsed = json_parcer.Parse(strResponse) ' this method returns the parsed object
+
+    if isObject(parsed) then
+      if parameters("raw") then
+        set raw_response = server.CreateObject("Scripting.Dictionary")
+        raw_response.add "strResponse", strResponse
+        set processXmlHttpResponse = raw_response
+      else
+        set processXmlHttpResponse = handle(parsed, parameters)
+      end if
+    end if
   End Function
 
   Public Function handleError(err_message, err_code, err_retryable, err_details, parameters)
@@ -188,7 +213,28 @@ Class Postmen
 
   Public Function handle(parsed, parameters)
     isContructed()
-    'body
+    ' local vars
+
+    if parsed.value("meta")("code") = 200 then
+      ' output the json object
+      'parsed.Write()
+      ' output a single value from the json object
+      response.write "<p>"
+      response.write "code: "& parsed.value("meta")("code") & "<br>"
+      response.write "message: "& parsed.value("meta")("message") & "<br>"
+      'response.write "details: "& parsed.value("meta")("details") & "<br>"
+      response.write "next_token: "& parsed.value("data")("next_token") & "<br>"
+      response.write "limit: "& parsed.value("data")("limit") & "<br>"
+      response.write "created_at_min: "& parsed.value("data")("created_at_min") & "<br>"
+      response.write "created_at_max: "& parsed.value("data")("created_at_max") & "<br>"
+      'response.write "labels: "& parsed.value("data")("labels") & "<br>"
+      response.write "</p>"
+
+      set handle = parsed
+    else
+      'NEEDS ERROR CATCHING CODE HERE
+      response.write "Postmen server side error occurred."
+    end if
   End Function
 
   ' allow query as a string
@@ -240,7 +286,7 @@ Class Postmen
 
     config.add "query", query
 
-    callGET = myCall("GET", path, config)
+    set callGET = myCall("GET", path, config)
   End Function
 
   Public Function callPOST(path, body, config)
@@ -270,9 +316,9 @@ Class Postmen
     isContructed()
 
     if not id = null then
-      myGet = callGET("/v3/"&resource&"/"&id, query, config)
+      set myGet = callGET("/v3/"&resource&"/"&id, query, config)
     else
-      myGet = callGET("/v3/"&resource, query, config)
+      set myGet = callGET("/v3/"&resource, query, config)
     end if
   End Function
 
