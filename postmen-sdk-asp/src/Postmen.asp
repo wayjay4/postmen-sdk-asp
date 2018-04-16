@@ -18,8 +18,12 @@ set query = Server.CreateObject("Scripting.Dictionary")
 set config = Server.CreateObject("Scripting.Dictionary")
 set result = api_myPostmen.myGet(resource, id, query, config)
 
-
-if result.Exists("strResponse") then
+if api_myPostmen.Error() then
+  set errorMessage = api_myPostmen.ErrorMessage
+  errorMessage = "error code: "&errorMessage("err_code")&"<br />error message: "&errorMessage("err_message")&""
+  response.write "<p>"&errorMessage&"</p>"
+  response.write "<p>Response: "&result("strResponse")&"</p>"
+elseif result.Exists("strResponse") then
   response.write result("strResponse")
 elseif result.Exists("data") then
   response.write "<p>"
@@ -32,15 +36,6 @@ elseif result.Exists("data") then
 end if
 
 
-'response.write("<p>")
-'for each key in result
-  'data = result(key)
-  'response.write "key: "&key&", value: "& result(key) &VbCrLf
-'next
-'response.write("</p>")
-
-
-
 '**
 '* Class Handler
 '*
@@ -49,7 +44,7 @@ end if
 Class Postmen
   ' local vars
   Private cv_isConstructed
-  Private cv_api_key, cv_version, cv_error, cv_config
+  Private cv_api_key, cv_version, cv_config, cv_error, cv_error_details
 
   ' auto-retry if retryable attributes
   Private cv_retry, cv_delay, cv_retries, cv_max_retries, cv_calls_left
@@ -88,14 +83,24 @@ Class Postmen
     cv_config.add "rate", true
     cv_config.add "array", false
     cv_config.add "raw", false
-    cv_config.add "safe", false
+    cv_config.add "safe", true
     set cv_config = MergeDicts(config)
     ' set attributes concerning rate limiting and auto-retry
     cv_delay = 1
     cv_retries = 0
     cv_max_retries = 5
     cv_calls_left = null
+    cv_error = false
+    set cv_error_details = CreateObject("Scripting.Dictionary")
   End Function
+
+  Public Property Get Error()
+    Error = cv_error
+  End Property
+
+  Public Property Get ErrorMessage()
+    set ErrorMessage = cv_error_details
+  End Property
 
   Public Function buildXmlHttpParams(method, path, config)
     isContructed()
@@ -193,16 +198,14 @@ Class Postmen
   Public Function processXmlHttpResponse(strStatus, strResponse, parameters)
     isContructed()
     ' local vars
-    dim json_parcer, parsed, raw_response
-
-    'response.write strResponse
+    dim json_parcer, parsed, raw_response, err_message, err_code, err_retryable, err_details
 
     ' instantiate the class
     set json_parcer = New JSONobject
-    ' load and parse some JSON formatted query string and set to jsonObj
-    set parsed = json_parcer.Parse(strResponse) ' this method returns the parsed object
+    ' parce the string object strResponse
+    set parsed = json_parcer.Parse(strResponse)
 
-    if isObject(parsed) then
+    if not isObject(parsed) then
       if parameters("raw") then
         set raw_response = server.CreateObject("Scripting.Dictionary")
         raw_response.add "strResponse", strResponse
@@ -210,15 +213,34 @@ Class Postmen
       else
         set processXmlHttpResponse = handle(parsed, parameters)
       end if
+    else
+      err_message = "Something went wrong on Postmen's end."
+      err_code = 500
+      err_retryable = false
+      set err_details = CreateObject("Scripting.Dictionary")
+
+      set processXmlHttpResponse = handleError(err_message, err_code, err_retryable, err_details, parameters)
     end if
   End Function
 
   Public Function handleError(err_message, err_code, err_retryable, err_details, parameters)
-    Dim error
+    Dim result, errorMessage
 
-    ' NEED TO ADD CODE HERE, IF WE END UP USING THIS
+    cv_error = true
+    cv_error_details.add "err_message", err_message
+    cv_error_details.add "err_code", err_code
+    cv_error_details.add "err_details", err_details
 
-    handleError = null
+    set result = CreateObject("Scripting.Dictionary")
+    result.add "strResponse", null
+
+    if not parameters("safe") then
+      set handleError = result
+    else
+      errorMessage = "error code: "&err_code&", error message: "&err_message
+      err.raise 60001, "PostmentErrorException", errorMessage
+      set handleError = result
+    end if
   End Function
 
   Public Function handle(parsed, parameters)
